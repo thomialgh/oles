@@ -47,6 +47,14 @@ impl PathParams {
     pub fn insert(&mut self, key: &str, value: &str) {
         self.path_map.insert(key.to_string(), value.to_string());
     }
+
+    pub fn get(&self, key: &str) -> String {
+        if let Some(val) = self.path_map.get(key) {
+            String::from(val)
+        } else {
+            "".to_string()
+        }
+    }
 }
 
 #[derive(Debug)]
