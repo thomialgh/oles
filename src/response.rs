@@ -1,24 +1,24 @@
 use hyper::{Body, Response, StatusCode, http::HeaderValue};
 use serde_json::{self, json};
 
-pub fn response_builder(body: serde_json::Value) -> Result<Response<Body>, hyper::http::Error> {
+pub async fn response_builder(body: serde_json::Value) -> Result<Response<Body>, hyper::http::Error> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .header("Content-Type", "application/json")
         .body(Body::from(body.to_string()))
 }
 
-pub fn response_not_found() -> Result<Response<Body>, hyper::http::Error> {
+pub async fn response_not_found() -> Result<Response<Body>, hyper::http::Error> {
     
     let body = json!({
         "status": StatusCode::NOT_FOUND.as_u16(),
         "msg": "NOT FOUND" 
     });
 
-    response_builder(body)
+    response_builder(body).await
 }
 
-pub fn response_method_not_allowed() -> Result<Response<Body>, hyper::http::Error> {
+pub async fn response_method_not_allowed() -> Result<Response<Body>, hyper::http::Error> {
     let body = json!(
         {
             "status": StatusCode::METHOD_NOT_ALLOWED.as_u16(),
@@ -26,10 +26,10 @@ pub fn response_method_not_allowed() -> Result<Response<Body>, hyper::http::Erro
         }
     );
 
-    response_builder(body)
+    response_builder(body).await
 }
 
-pub fn response_internal_server_err() -> Response<Body> {
+pub async fn response_internal_server_err() -> Response<Body> {
 
     let body = json!({
         "status": StatusCode::INTERNAL_SERVER_ERROR.as_u16(),

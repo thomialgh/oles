@@ -1,70 +1,104 @@
+use std::{convert::Infallible, future::Future};
+use hyper::{
+    Response, 
+    Request, 
+    Body, 
+    Method,
+};
+use regex::Regex;
 
-use std::{convert::Infallible, collections::HashMap};
-use hyper::{Request, Body, Response};
+use crate::{
+    response::{response_not_found, response_internal_server_err, response_method_not_allowed},
+    params::{QueryParams, PathParams, ContextHandler}
+};
 
-// pub type HandleFunc = fn(Request<Body>) -> Result<Response<Body>, Infallible>;
-pub type HandleFunc = fn(ContextHandler, Request<Body>) -> Result<Response<Body>, Infallible>;
-
-
-#[derive(Debug)]
-pub struct QueryParams {
-    query_map: HashMap<String, String>
+pub type HandlerFn<T> = fn(ContextHandler, Request<Body>) -> T;
+pub struct Handler<T>
+where T: Future<Output = Result<Response<Body>, Infallible>>
+{
+    regex_path: Regex,
+    method: Method,
+    f: HandlerFn<T>
 }
 
-impl QueryParams {
-    pub fn new(req: &Request<Body>) -> Self {
-        let mut query_map: HashMap<String, String> = HashMap::new();
+impl<T> Handler<T>
+where T: Future<Output = Result<Response<Body>, Infallible>>
+{
+    pub async fn new(path: &str, method: Method, f: fn(ContextHandler, Request<Body>) -> T) -> Self {
+        let regex_path = Regex::new(format!(r"^{path}$").as_str()).unwrap();
+        Self { regex_path, method, f }
+    }
 
-        if let Some(query) = req.uri().query() {
-            query.split("&").for_each(|qw| {
-                let item: Vec<&str> = qw.split("=").collect();
-                if item.len() == 2 {
-                    query_map.insert(item[0].to_string(), item[1].to_string());
+    pub async fn get_params(&self, path: &str) -> PathParams {
+        let mut path_param = PathParams::new();
+
+        match self.regex_path.captures(path) {
+            Some(cap) => {
+                self.regex_path.capture_names().for_each(|i| {
+                    if let Some(cap_name) = i {
+                        if let Some (m) = cap.name(cap_name) {
+                            path_param.insert(cap_name, m.as_str());
+                        }
+                    }
+                });
+            },
+            _ => {}
+        };
+
+        path_param
+    }
+}
+
+pub struct Handlers<T>
+where T: Future<Output = Result<Response<Body>, Infallible>>
+{
+    pub handlers: Vec<Handler<T>>
+}
+
+impl<T> Handlers<T>
+where T: Future<Output = Result<Response<Body>, Infallible>>
+{
+    pub async fn new(handlers: Vec<Handler<T>>) -> Self {
+        Self {handlers}
+    }
+
+    pub async fn match_by_path(&self, path: &str) -> Option<Vec<&Handler<T>>> {
+        let handlers: Vec<&Handler<T>> = self.handlers
+            .iter()
+            .filter(|i| i.regex_path.is_match(path))
+            .collect();
+
+        match handlers.len() {
+            x if x == 0 => None,
+            _ => Some(handlers)
+        }
+    }
+
+    pub async fn find_by_method<'a>(&self, handlers: Vec<&'a Handler<T>>, method: &Method) -> Option<&'a Handler<T>> {
+        handlers
+            .iter()
+            .find(|&i| i.method == *method)
+            .map(|&i| i)
+    }
+
+    pub async fn route(&self, _req: Request<Body>) -> Result<Response<Body>, Infallible> {
+        let path = _req.uri().path();
+        let method =  _req.method();
+        match self.match_by_path(path).await {
+            Some(handlers) => {
+                match self.find_by_method(handlers, method).await {
+                    Some(handler) => {
+                        let query = QueryParams::new(&_req);
+                        let params = handler.get_params(path).await;
+
+                        let ctx = ContextHandler::new(params, query);
+                        let h = handler.f;
+                        h(ctx, _req).await
+                    },
+                    None => Ok(response_method_not_allowed().await.unwrap_or(response_internal_server_err().await))
                 }
-            })
+            },
+            None => {Ok(response_not_found().await.unwrap_or(response_internal_server_err().await))}
         }
-        Self { query_map }
-    }
-    pub fn get(&self, key: &str) -> String {
-        if let Some(val) = self.query_map.get(key) {
-            String::from(val)
-        } else {
-            "".to_string()
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct PathParams {
-    path_map: HashMap<String, String>
-}
-
-impl PathParams {
-    pub fn new() -> Self {
-        Self {path_map : HashMap::new()}
     } 
-
-    pub fn insert(&mut self, key: &str, value: &str) {
-        self.path_map.insert(key.to_string(), value.to_string());
-    }
-
-    pub fn get(&self, key: &str) -> String {
-        if let Some(val) = self.path_map.get(key) {
-            String::from(val)
-        } else {
-            "".to_string()
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ContextHandler {
-    pub params: PathParams,
-    pub query: QueryParams
-}
-
-impl ContextHandler {
-    pub fn new(params: PathParams, query: QueryParams) -> Self {
-        Self {params, query}
-    }
 }
