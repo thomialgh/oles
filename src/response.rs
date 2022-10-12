@@ -1,44 +1,52 @@
-use hyper::{Body, Response, StatusCode, http::HeaderValue};
-use serde_json::{self, json};
+use hyper::{Body, Response, StatusCode};
+use serde_json::{self, json, Value};
 
-pub async fn response_builder(body: serde_json::Value) -> Result<Response<Body>, hyper::http::Error> {
-    Response::builder()
-        .status(StatusCode::NOT_FOUND)
-        .header("Content-Type", "application/json")
-        .body(Body::from(body.to_string()))
-}
-
-pub async fn response_not_found() -> Result<Response<Body>, hyper::http::Error> {
-    
-    let body = json!({
+pub async fn response_not_found() -> Resp {
+    json!({
         "status": StatusCode::NOT_FOUND.as_u16(),
         "msg": "NOT FOUND" 
-    });
-
-    response_builder(body).await
+    }).with_status(StatusCode::NOT_FOUND)
 }
 
-pub async fn response_method_not_allowed() -> Result<Response<Body>, hyper::http::Error> {
-    let body = json!(
+pub async fn response_method_not_allowed() -> Resp {
+    json!(
         {
             "status": StatusCode::METHOD_NOT_ALLOWED.as_u16(),
             "msg": "Method Not Allowed"
         }
-    );
-
-    response_builder(body).await
+    ).with_status(StatusCode::METHOD_NOT_ALLOWED)
 }
 
-pub async fn response_internal_server_err() -> Response<Body> {
-
-    let body = json!({
+pub async fn response_internal_server_err() -> Resp {
+    json!({
         "status": StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
         "msg": "Internal Server Error",
-    });
-    let mut resp = Response::new(Body::from(body.to_string()));
-    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-    if let Ok(hv) = HeaderValue::from_str("application/json") {
-        resp.headers_mut().append("Content-Type", hv);
+    }).with_status(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub type Resp = Response<Body>;
+
+pub trait IntoResponse: Send + Sized + 'static {
+    fn into_response(self) -> Resp;
+
+    fn with_status(self, status: StatusCode) -> Resp {
+        let mut r = self.into_response();
+        *r.status_mut() = status;
+        r
     }
-    resp
+}
+
+impl IntoResponse for &'static str {
+    fn into_response(self) -> Resp {
+        Response::new(self.into())
+    }
+}
+
+impl IntoResponse for Value {
+    fn into_response(self) -> Resp {
+        Response::builder()
+            .header("Content-Type", "application/json")
+            .body(Body::from(self.to_string()))
+            .unwrap_or("Internal Server Error".with_status(StatusCode::INTERNAL_SERVER_ERROR))
+    }
 }

@@ -8,25 +8,27 @@ use hyper::{
 use regex::Regex;
 
 use crate::{
-    response::{response_not_found, response_internal_server_err, response_method_not_allowed},
-    params::{QueryParams, PathParams, ContextHandler, self}
+    response::{response_not_found, response_method_not_allowed},
+    params::{QueryParams, PathParams, ContextHandler, self},
+    response::Resp
 };
 
 use async_trait::async_trait;
 
 
+
 #[async_trait]
 pub trait FnHandler: Send + Sync +  'static {
-    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Result<Response<Body>, Infallible>; 
+    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Resp; 
 }
 
 #[async_trait]
 impl <F: Send + Sync + 'static, Fut> FnHandler for F 
 where 
     F: Fn(params::ContextHandler, Request<Body>) -> Fut,
-    Fut: Future<Output = Result<Response<Body>, Infallible>> + Send + 'static,
+    Fut: Future<Output = Resp> + Send + 'static
 {
-    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Resp {
         self(ctx, req).await
     }
 
@@ -107,12 +109,12 @@ impl Handlers
                         let params = handler.get_params(path).await;
 
                         let ctx = ContextHandler::new(params, query);
-                        handler.f.invoke(ctx, _req).await
+                        Ok(handler.f.invoke(ctx, _req).await)
                     },
-                    None => Ok(response_method_not_allowed().await.unwrap_or(response_internal_server_err().await))
+                    None => Ok(response_method_not_allowed().await)
                 }
             },
-            None => {Ok(response_not_found().await.unwrap_or(response_internal_server_err().await))}
+            None => {Ok(response_not_found().await)}
         }
     } 
 }
