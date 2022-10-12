@@ -1,13 +1,7 @@
 use std::{convert::Infallible, net::SocketAddr};
 
-use hyper::{Request, Body, Response, Method, service::{make_service_fn, service_fn}, Server, StatusCode};
-use oles::response::IntoResponse;
-use params::ContextHandler;
-use serde_json::json;
+use hyper::{Request, Body, Response, service::{make_service_fn, service_fn}, Server};
 
-use crate::{
-    response::{Resp}
-};
 
 pub mod handler;
 pub mod params;
@@ -32,21 +26,9 @@ async fn main() {
 }
 
 
-async fn ping(_ctx: ContextHandler, _req: Request<Body>) -> Resp {
-    "PONG".into_response()
-}
-
-async fn t_ping(_ctx: ContextHandler, _req: Request<Body>) -> Resp {
-    json!({"haha": 0}).with_status(StatusCode::OK)
-}
-
-
 async fn handler(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
 
-    let route = vec![
-        handler::Handler::new("/ping/", Method::GET, Box::new(t_ping)).await,
-        handler::Handler::new("/ping", Method::GET, Box::new(ping)).await
-    ];
+    let route = vec![];
 
      let handler = handler::Handlers::new(route).await;
 

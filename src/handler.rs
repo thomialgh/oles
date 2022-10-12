@@ -19,17 +19,17 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait FnHandler: Send + Sync +  'static {
-    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Resp; 
+    async fn invoke(&self, ctx: params::ContextHandler) -> Resp; 
 }
 
 #[async_trait]
 impl <F: Send + Sync + 'static, Fut> FnHandler for F 
 where 
-    F: Fn(params::ContextHandler, Request<Body>) -> Fut,
+    F: Fn(params::ContextHandler) -> Fut,
     Fut: Future<Output = Resp> + Send + 'static
 {
-    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Resp {
-        self(ctx, req).await
+    async fn invoke(&self, ctx: params::ContextHandler) -> Resp {
+        self(ctx).await
     }
 
 } 
@@ -108,8 +108,8 @@ impl Handlers
                         let query = QueryParams::new(&_req);
                         let params = handler.get_params(path).await;
 
-                        let ctx = ContextHandler::new(params, query);
-                        Ok(handler.f.invoke(ctx, _req).await)
+                        let ctx = ContextHandler::new(params, query, _req);
+                        Ok(handler.f.invoke(ctx).await)
                     },
                     None => Ok(response_method_not_allowed().await)
                 }

@@ -60,11 +60,20 @@ impl PathParams {
 #[derive(Debug)]
 pub struct ContextHandler {
     pub params: PathParams,
-    pub query: QueryParams
+    pub query: QueryParams,
+    pub req: Request<Body>,
 }
 
 impl ContextHandler {
-    pub fn new(params: PathParams, query: QueryParams) -> Self {
-        Self {params, query}
+    pub fn new(params: PathParams, query: QueryParams, req: Request<Body>) -> Self {
+        Self {params, query, req}
+    }
+
+    pub async fn json_body<T>(&mut self) -> Result<T, Box<dyn std::error::Error>> 
+    where 
+        T: serde::de::DeserializeOwned
+    {
+        let body = hyper::body::to_bytes(self.req.body_mut()).await?;
+        Ok(serde_json::from_slice(&body)?)
     }
 }
