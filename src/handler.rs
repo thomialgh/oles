@@ -18,7 +18,7 @@ use async_trait::async_trait;
 
 
 #[async_trait]
-pub trait FnHandler: Send + Sync +  'static {
+pub trait FnHandler: Send + Sync + 'static {
     async fn invoke(&self, ctx: params::ContextHandler) -> Resp; 
 }
 
