@@ -9,22 +9,39 @@ use regex::Regex;
 
 use crate::{
     response::{response_not_found, response_internal_server_err, response_method_not_allowed},
-    params::{QueryParams, PathParams, ContextHandler}
+    params::{QueryParams, PathParams, ContextHandler, self}
 };
 
-pub type HandlerFn<T> = fn(ContextHandler, Request<Body>) -> T;
-pub struct Handler<T>
-where T: Future<Output = Result<Response<Body>, Infallible>>
+use async_trait::async_trait;
+
+
+#[async_trait]
+pub trait FnHandler: Send + Sync +  'static {
+    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Result<Response<Body>, Infallible>; 
+}
+
+#[async_trait]
+impl <F: Send + Sync + 'static, Fut> FnHandler for F 
+where 
+    F: Fn(params::ContextHandler, Request<Body>) -> Fut,
+    Fut: Future<Output = Result<Response<Body>, Infallible>> + Send + 'static,
+{
+    async fn invoke(&self, ctx: params::ContextHandler, req: Request<Body>) -> Result<Response<Body>, Infallible> {
+        self(ctx, req).await
+    }
+
+} 
+
+pub struct Handler
 {
     regex_path: Regex,
     method: Method,
-    f: HandlerFn<T>
+    f: Box<dyn FnHandler>
 }
 
-impl<T> Handler<T>
-where T: Future<Output = Result<Response<Body>, Infallible>>
+impl Handler
 {
-    pub async fn new(path: &str, method: Method, f: fn(ContextHandler, Request<Body>) -> T) -> Self {
+    pub async fn new(path: &str, method: Method, f: Box<dyn FnHandler>) -> Self {
         let regex_path = Regex::new(format!(r"^{path}$").as_str()).unwrap();
         Self { regex_path, method, f }
     }
@@ -49,21 +66,19 @@ where T: Future<Output = Result<Response<Body>, Infallible>>
     }
 }
 
-pub struct Handlers<T>
-where T: Future<Output = Result<Response<Body>, Infallible>>
+pub struct Handlers
 {
-    pub handlers: Vec<Handler<T>>
+    pub handlers: Vec<Handler>
 }
 
-impl<T> Handlers<T>
-where T: Future<Output = Result<Response<Body>, Infallible>>
+impl Handlers
 {
-    pub async fn new(handlers: Vec<Handler<T>>) -> Self {
+    pub async fn new(handlers: Vec<Handler>) -> Self {
         Self {handlers}
     }
 
-    pub async fn match_by_path(&self, path: &str) -> Option<Vec<&Handler<T>>> {
-        let handlers: Vec<&Handler<T>> = self.handlers
+    pub async fn match_by_path(&self, path: &str) -> Option<Vec<&Handler>> {
+        let handlers: Vec<&Handler> = self.handlers
             .iter()
             .filter(|i| i.regex_path.is_match(path))
             .collect();
@@ -74,7 +89,7 @@ where T: Future<Output = Result<Response<Body>, Infallible>>
         }
     }
 
-    pub async fn find_by_method<'a>(&self, handlers: Vec<&'a Handler<T>>, method: &Method) -> Option<&'a Handler<T>> {
+    pub async fn find_by_method<'a>(&self, handlers: Vec<&'a Handler>, method: &Method) -> Option<&'a Handler> {
         handlers
             .iter()
             .find(|&i| i.method == *method)
@@ -92,8 +107,7 @@ where T: Future<Output = Result<Response<Body>, Infallible>>
                         let params = handler.get_params(path).await;
 
                         let ctx = ContextHandler::new(params, query);
-                        let h = handler.f;
-                        h(ctx, _req).await
+                        handler.f.invoke(ctx, _req).await
                     },
                     None => Ok(response_method_not_allowed().await.unwrap_or(response_internal_server_err().await))
                 }
