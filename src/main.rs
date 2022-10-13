@@ -1,20 +1,29 @@
-use std::{convert::Infallible, net::SocketAddr};
+use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
-use hyper::{Request, Body, Response, service::{make_service_fn, service_fn}, Server};
+use hyper::{service::{make_service_fn, service_fn}, Server};
+use crate::response::IntoResponse;
+use crate::router::route;
 
 
-pub mod handler;
 pub mod params;
 pub mod response;
+pub mod router;
 
 #[tokio::main]
 async fn main() {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
-
-    let make_service = make_service_fn(|_conn| async {
-        Ok::<_, Infallible>(service_fn(handler))
+    let router_shared = Arc::new(router().unwrap());
+    let make_service = make_service_fn(move |_conn| 
+    {
+        let router_shared = Arc::clone(&router_shared);
+        async move {
+            Ok::<_, Infallible>(service_fn(move |_req| {
+                let router_shared = Arc::clone(&router_shared);
+                route(_req, router_shared)
+            }))
+        }
     });
 
     let server = Server::bind(&addr).serve(make_service);
@@ -26,11 +35,12 @@ async fn main() {
 }
 
 
-async fn handler(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
+fn router() -> Result<router::Router, Box<dyn std::error::Error>> {
+    let mut router = router::Router::new();
+    router.get("/ping", Box::new(|_ctx| async {"PONG".into_response()}))?;
+    router.get("/test-ping", Box::new(|_ctx| async {"PONG".into_response()}))?;
+    router.post("/ping", Box::new(|_ctx| async {"this is post".into_response()}))?;
 
-    let route = vec![];
-
-     let handler = handler::Handlers::new(route).await;
-
-    handler.route(_req).await
+    Ok(router)
 }
+

@@ -1,6 +1,7 @@
-pub mod handler;
 pub mod response;
 pub mod params;
+
+pub mod router;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
@@ -16,4 +17,3 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
-
