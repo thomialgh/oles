@@ -63,6 +63,62 @@ impl Router {
         Ok(())
     }
 
+    pub fn put(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::PUT).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }   
+    
+    pub fn patch(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::PATCH).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+    
+    pub fn options(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::OPTIONS).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+
+    pub fn delete(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::DELETE).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+
+    pub fn head(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::HEAD).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+
+    pub fn connect(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::CONNECT).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+
+    pub fn trace(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
+        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
+        let m = self.method_map.entry(Method::TRACE).or_insert(Vec::new());
+        m.push(route_handler);
+
+        Ok(())
+    }
+
     pub fn get_handler(&self, path: &str, query: Option<&str>, method: &Method) -> Option<RouteMatch> {
         let v = self.method_map.get(method)?;
         let handler = v.iter()
