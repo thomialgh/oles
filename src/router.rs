@@ -6,21 +6,23 @@ use regex::Regex;
 use crate::{
     params::{Context, Params, Query, self},
     response::{Resp, IntoResponse},
+    service::Service
+
 };
 
 #[async_trait]
 pub trait Handler: Send + Sync + 'static {
-    async fn invoke(&self, ctx: Context) -> Resp;
+    async fn invoke(&self, svc: Arc<Service>, ctx: Context) -> Resp;
 }
 
 #[async_trait]
 impl <F: Send + Sync + 'static, Fut> Handler for F 
 where
-    F: Fn(Context) -> Fut,
+    F: Fn(Arc<Service>, Context) -> Fut,
     Fut: Future<Output = Resp> + Send + 'static
 {
-    async fn invoke(&self, ctx: Context) -> Resp {
-        (self)(ctx).await
+    async fn invoke(&self, svc: Arc<Service>, ctx: Context) -> Resp {
+        (self)(svc, ctx).await
     }
 }
 
@@ -150,14 +152,14 @@ pub struct RouteMatch<'a> {
     pub query: Query
 }
 
-pub async fn route(req: Request<Body>, shared_router: Arc<Router>) -> Result<Resp, Infallible> {
+pub async fn route(req: Request<Body>, shared_router: Arc<Router>, shared_service: Arc<Service>) -> Result<Resp, Infallible> {
     let path = req.uri().path();
     let query = req.uri().query();
     let method = req.method();
     match shared_router.get_handler(path, query, method) {
         Some(m) => {
             let ctx = params::Context::new(m.query, m.params, req);
-            return Ok(m.handler.invoke(ctx).await)
+            return Ok(m.handler.invoke(shared_service, ctx).await)
         },
         None => {return Ok("Not Found".into_response())}
     }

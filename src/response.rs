@@ -17,6 +17,12 @@ impl IntoResponse for Value {
     }
 }
 
+impl IntoResponse for String {
+    fn into_response(self) -> Resp {
+        Response::new(Body::from(self))
+    }
+}
+
 impl<T: Serialize + Send + Sized + 'static> IntoResponse for T 
 where T: ResponseJson
 {
