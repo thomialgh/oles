@@ -2,7 +2,6 @@ pub mod response;
 pub mod params;
 
 pub mod router;
-pub mod service;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
