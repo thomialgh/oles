@@ -1,164 +1,168 @@
-use std::{future::Future, collections::HashMap, sync::Arc, convert::Infallible};
-
-use async_trait::async_trait;
+use std::{sync::Arc, future::Future, collections::HashMap, vec, convert::Infallible};
 use hyper::{Method, Request, Body};
 use regex::Regex;
-use crate::{
-    params::{Context, Params, Query, self},
-    response::{Resp, IntoResponse},
-};
+use async_trait::async_trait;
 
-#[async_trait]
-pub trait Handler: Send + Sync + 'static {
-    async fn invoke(&self, ctx: Context) -> Resp;
-}
+use crate::{response::{Resp, IntoResponse, self}, params::{Params, Query, Context}};
 
-#[async_trait]
-impl <F: Send + Sync + 'static, Fut> Handler for F 
-where
-    F: Fn(Context) -> Fut,
-    Fut: Future<Output = Resp> + Send + 'static
+pub type FnHandler<S, Fut> = fn(Arc<S>, Context) -> Fut;
+
+pub struct Handler<S, Fut>
+where   
+    S: Send + Sync + 'static,
+    Fut: Future<Output = Resp> + Send + Sync + 'static
 {
-    async fn invoke(&self, ctx: Context) -> Resp {
-        (self)(ctx).await
-    }
-}
-
-pub struct RouterHandler {
     regex: Regex,
-    handler: Box<dyn Handler>
+    f: Box<FnHandler<S, Fut>>
 }
 
-impl RouterHandler {
-    pub fn builder(path: String, handler: Box<dyn Handler>) -> Result<Self, Box<dyn std::error::Error>> {
-        let regex = Regex::new(&path)?;
-        Ok(Self { regex, handler })
+impl<S, Fut> Handler<S, Fut> 
+where
+    S: Send + Sync + 'static,
+    Fut: Future<Output = Resp> + Send + Sync + 'static
+{
+
+    pub fn new(path: &str, f: FnHandler<S, Fut>) -> Self {
+        let regex = regex::Regex::new(path).unwrap();
+        Self { regex, f: Box::new(f) }
     }
 }
 
+#[async_trait]
+pub trait HandlerTrait: Send + Sync + 'static {
+    type Svc;
 
-pub struct Router {
-    method_map: HashMap<Method, Vec<RouterHandler>>
+    async fn invoke(&self, s: Arc<Self::Svc>, ctx: Context) -> Resp;
+    fn match_path(&self, path: &str) -> bool;
+    fn get_params(&self, path: &str) -> Params;
 }
 
-impl Router {
-    pub fn new() -> Self {
-        let method_map = HashMap::new();
-        Self {method_map}
+#[async_trait]
+impl<S, Fut> HandlerTrait for Handler<S, Fut> 
+where
+    S: Send + Sync + 'static,
+    Fut: Future<Output = Resp> + Send + Sync +  'static
+{
+    type Svc = S;
+
+    async fn invoke(&self, s: Arc<Self::Svc>, ctx: Context) -> Resp {
+        (self.f)(s, ctx).await
     }
 
-    pub fn get(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::GET).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
+    fn match_path(&self, path: &str) -> bool {
+        self.regex.is_match(path)
     }
 
-    pub fn post(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::POST).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn put(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::PUT).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }   
-    
-    pub fn patch(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::PATCH).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-    
-    pub fn options(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::OPTIONS).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn delete(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::DELETE).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn head(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::HEAD).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn connect(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::CONNECT).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn trace(&mut self, path: &str, handler: Box<dyn Handler>) -> Result<(), Box<dyn std::error::Error>> {
-        let route_handler = RouterHandler::builder(path.to_string(), handler)?;
-        let m = self.method_map.entry(Method::TRACE).or_insert(Vec::new());
-        m.push(route_handler);
-
-        Ok(())
-    }
-
-    pub fn get_handler(&self, path: &str, query: Option<&str>, method: &Method) -> Option<RouteMatch> {
-        let v = self.method_map.get(method)?;
-        let handler = v.iter()
-            .find(|handler| {handler.regex.is_match(path)})
-            .map(|handler| {handler})?;
-
-        let mut params = Params::new();
-        handler.regex.capture_names()
-            .for_each(|i| {
-                if let Some(name) = i {
-                    if let Some(cap) = handler.regex.captures(path) {
-                        if let Some(val) = cap.name(name) {
-                            params.insert(name.to_string(), val.as_str().to_string())
-                        }
+    fn get_params(&self, path: &str) -> Params {
+        let mut param = Params::new();
+        self.regex.capture_names()
+        .for_each(|name| {
+            if let Some(name) = name {
+                if let Some(cap) = self.regex.captures(path) {
+                    if let Some(val) = cap.name(name) {
+                        param.insert(name.to_string(), val.as_str().to_string())
                     }
                 }
-            });
+            }
+        });
 
-        let query = Query::new(query);
-        let route_match = RouteMatch{handler: &*handler.handler, query, params};
+        param
+    }
 
-        Some(route_match) 
+} 
+
+pub struct Router<S> 
+where
+    S: Send + Sync + 'static,
+{
+    map_route: HashMap<Method, Vec<Box<dyn HandlerTrait<Svc = S>>>>
+}
+
+impl<S> Router<S> 
+where
+    S: Send + Sync + 'static,
+{
+    pub fn new() -> Self {
+        Self {map_route: HashMap::new()}
+    }
+
+    pub fn get(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::GET).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn post(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::POST).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn put(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::PUT).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn delete(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::DELETE).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn patch(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::PATCH).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn head(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::HEAD).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn connect(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::CONNECT).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn trace(&mut self, handler: Box<dyn HandlerTrait<Svc = S>>) {
+        let m = self.map_route.entry(Method::TRACE).or_insert(vec![]);
+        m.push(handler);
+    }
+
+    pub fn get_handler(&self, method: &Method, path: &str, query: Option<&str>) -> Option<RouteMatch<S>> {
+       let h = self.map_route.get(method)?
+        .iter()
+        .find(|i|i.match_path(path))?;
+       Some(
+        RouteMatch{
+            param: h.get_params(path),
+            query: Query::new(query),
+            handler: &**h
+           }
+       )
     }
 }
 
-pub struct RouteMatch<'a> {
-    pub handler: &'a dyn Handler,
-    pub params: Params,
-    pub query: Query
+pub struct RouteMatch<'a, S> {
+    pub query: Query,
+    pub param: Params,
+    pub handler: &'a dyn HandlerTrait<Svc = S>    
 }
 
-pub async fn route(req: Request<Body>, shared_router: Arc<Router>) -> Result<Resp, Infallible> {
+pub async fn route<S>(req: Request<Body>, shared_router: Arc<Router<S>>, svc: Arc<S>) -> Result<Resp, Infallible>
+where
+    S: Send + Sync + 'static
+{
+    let method = req.method();
     let path = req.uri().path();
     let query = req.uri().query();
-    let method = req.method();
-    match shared_router.get_handler(path, query, method) {
-        Some(m) => {
-            let ctx = params::Context::new(m.query, m.params, req);
-            return Ok(m.handler.invoke(ctx).await)
-        },
-        None => {return Ok("Not Found".into_response())}
+
+    match shared_router.get_handler(method, path, query) {
+        Some(router_match) => {
+            let ctx = Context::new(router_match.query, router_match.param, req);
+            return Ok(router_match.handler.invoke(svc, ctx).await)
+        }
+
+        None => {
+           return Ok(response::response_not_found().await)
+        }
     }
+
 }
