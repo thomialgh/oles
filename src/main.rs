@@ -1,8 +1,9 @@
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use std::{ net::SocketAddr, sync::Arc};
 
-use hyper::{service::{make_service_fn, service_fn}, Server};
+use oles::Server;
 
-use crate::router::route;
+
+
 
 
 pub mod params;
@@ -16,34 +17,22 @@ async fn main() {
 
     let router_shared = Arc::new(router());
     let shared_service = Arc::new(Svc);
-    let make_service = make_service_fn(move |_conn| 
-    {
-        let router_shared = Arc::clone(&router_shared);
-        let shared_service = Arc::clone(&shared_service);
-        async move {
-            Ok::<_, Infallible>(service_fn(move |_req| {
-                let router_shared = Arc::clone(&router_shared);
-                let shared_service = Arc::clone(&shared_service);
-                route(_req, router_shared, shared_service)
-            }))
-        }
-    });
 
-    let server = Server::bind(&addr).serve(make_service);
+    let server = Server::new(addr, shared_service.clone(), router_shared.clone());
 
-    // And run forever...
-    if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+    if let Err(err) = server.run().await {
+        eprintln!("{}", err)
     }
+
 }
 
 
 struct Svc;
 
 
-fn router() -> router::Router<Svc> 
+fn router() -> oles::router::Router<Svc> 
 {
-    let router = router::Router::new();
+    let router = oles::router::Router::new();
 
     router
 }

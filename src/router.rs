@@ -3,7 +3,7 @@ use hyper::{Method, Request, Body};
 use regex::Regex;
 use async_trait::async_trait;
 
-use crate::{response::{Resp, IntoResponse, self}, params::{Params, Query, Context}};
+use crate::{response::{Resp, self}, params::{Params, Query, Context}};
 
 pub type FnHandler<S, Fut> = fn(Arc<S>, Context) -> Fut;
 
